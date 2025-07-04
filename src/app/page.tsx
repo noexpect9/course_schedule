@@ -1,5 +1,11 @@
 "use client";
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
 import {
   format,
   addMonths,
@@ -17,15 +23,25 @@ import { zhCN } from "date-fns/locale";
 import * as htmlToImage from "html-to-image";
 
 // --- 类型定义 ---
+// --- MODIFIED ---: Renamed 'date' to 'startDate' for clarity and consistency
 interface EventType {
   id: number;
   title: string;
-  date: Date; // 将 'date' 视为开始时间
-  endDate: Date; // 新增结束时间
+  startDate: Date;
+  endDate: Date;
   color: string;
 }
 
-// --- 图标组件 ---
+// --- NEW ---: Type for raw data coming from the API
+interface ApiEvent {
+  id: number;
+  title: string;
+  start_date: string; // The backend sends snake_case strings
+  end_date: string;
+  color: string;
+}
+
+// --- 图标组件 (No changes) ---
 const ChevronLeftIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     {...props}
@@ -39,10 +55,10 @@ const ChevronLeftIcon = (props: React.SVGProps<SVGSVGElement>) => (
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    <polyline points="15 18 9 12 15 6"></polyline>
+    {" "}
+    <polyline points="15 18 9 12 15 6"></polyline>{" "}
   </svg>
 );
-
 const ChevronRightIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     {...props}
@@ -56,10 +72,10 @@ const ChevronRightIcon = (props: React.SVGProps<SVGSVGElement>) => (
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    <polyline points="9 18 15 12 9 6"></polyline>
+    {" "}
+    <polyline points="9 18 15 12 9 6"></polyline>{" "}
   </svg>
 );
-
 const XIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     {...props}
@@ -73,8 +89,9 @@ const XIcon = (props: React.SVGProps<SVGSVGElement>) => (
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    <line x1="18" y1="6" x2="6" y2="18"></line>
-    <line x1="6" y1="6" x2="18" y2="18"></line>
+    {" "}
+    <line x1="18" y1="6" x2="6" y2="18"></line>{" "}
+    <line x1="6" y1="6" x2="18" y2="18"></line>{" "}
   </svg>
 );
 
@@ -86,63 +103,68 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<EventType | null>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
-  // --- 数据持久化 ---
-  useEffect(() => {
+
+  // --- NEW ---: Centralized function to fetch and process events from the API
+  const fetchEvents = useCallback(async () => {
     try {
-      const savedEvents = localStorage.getItem("calendar_events");
-      if (savedEvents) {
-        const parsedEvents: EventType[] = JSON.parse(savedEvents).map(
-          (e: any) => ({
-            ...e,
-            date: parseISO(e.date),
-            endDate: parseISO(e.endDate),
-          })
-        );
-        setEvents(parsedEvents);
-      } else {
-        setEvents([]);
+      // We will fetch from the correct API endpoint for classes/events
+      const response = await fetch(`/api/events`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch events");
       }
+      const { data } = await response.json();
+
+      // Transform the raw API data into the format our component uses (string -> Date)
+      const formattedEvents = data.map((event: ApiEvent) => ({
+        id: event.id,
+        title: event.title,
+        startDate: parseISO(event.start_date),
+        endDate: parseISO(event.end_date),
+        color: event.color,
+      }));
+      setEvents(formattedEvents);
     } catch (error) {
-      console.error("Failed to load events from localStorage", error);
+      console.error("Error fetching events:", error);
+      // Optionally, show an error message to the user
     }
   }, []);
 
+  // --- MODIFIED ---: This useEffect now fetches from the API on initial component load
   useEffect(() => {
-    try {
-      localStorage.setItem("calendar_events", JSON.stringify(events));
-    } catch (error) {
-      console.error("Failed to save events to localStorage", error);
-    }
-  }, [events]);
+    fetchEvents();
+  }, [fetchEvents]);
 
-  // --- 日历逻辑 ---
+  // --- REMOVED ---: The two useEffect hooks for localStorage have been removed.
+
+  // --- 日历逻辑 (No changes) ---
   const calendarDays = useMemo(() => {
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
-    const startDate = startOfWeek(monthStart, { weekStartsOn: 0 }); // Sunday start
+    const startDate = startOfWeek(monthStart, { weekStartsOn: 0 });
     const endDate = endOfWeek(monthEnd, { weekStartsOn: 0 });
     return eachDayOfInterval({ start: startDate, end: endDate });
   }, [currentDate]);
 
   const eventsByDate = useMemo(() => {
     return events.reduce((acc: { [key: string]: EventType[] }, event) => {
-      const dateKey = format(event.date, "yyyy-MM-dd");
+      const dateKey = format(event.startDate, "yyyy-MM-dd");
       if (!acc[dateKey]) {
         acc[dateKey] = [];
       }
       acc[dateKey].push(event);
-      acc[dateKey].sort((a, b) => a.date.getTime() - b.date.getTime());
+      acc[dateKey].sort(
+        (a, b) => a.startDate.getTime() - b.startDate.getTime()
+      );
       return acc;
     }, {});
   }, [events]);
 
-  // --- 事件处理器 ---
+  // --- 事件处理器 (No changes to these handlers) ---
   const handlePrevMonth = () => setCurrentDate(subMonths(currentDate, 1));
   const handleNextMonth = () => setCurrentDate(addMonths(currentDate, 1));
   const handleGoToToday = () => setCurrentDate(new Date());
   const handleExportAsPNG = () => {
     if (calendarRef.current) {
-      console.log(calendarRef.current);
       htmlToImage
         .toPng(calendarRef.current)
         .then((dataUrl) => {
@@ -164,7 +186,7 @@ export default function App() {
   };
 
   const openModalForEditEvent = (event: EventType) => {
-    setSelectedDate(event.date);
+    setSelectedDate(event.startDate);
     setSelectedEvent(event);
     setIsModalOpen(true);
   };
@@ -173,26 +195,78 @@ export default function App() {
     setIsModalOpen(false);
   };
 
-  const handleSaveEvent = (eventData: Omit<EventType, "id">) => {
-    if (selectedEvent) {
-      setEvents(
-        events.map((e) =>
-          e.id === selectedEvent.id ? { ...selectedEvent, ...eventData } : e
-        )
-      );
-    } else {
-      setEvents([...events, { id: Date.now(), ...eventData }]);
+  // --- MODIFIED ---: handleSaveEvent now communicates with the backend API
+  const handleSaveEvent = async (
+    eventData: Omit<EventType, "id" | "startDate"> & {
+      date: Date;
+      endDate: Date;
     }
-    closeModal();
-  };
+  ) => {
+    // The API expects 'date' and 'endDate' properties in the body
+    const payload = {
+      title: eventData.title,
+      date: eventData.date.toISOString(),
+      endDate: eventData.endDate.toISOString(),
+      color: eventData.color,
+    };
 
-  const handleDeleteEvent = () => {
-    if (selectedEvent) {
-      setEvents(events.filter((e) => e.id !== selectedEvent.id));
+    try {
+      let response;
+      if (selectedEvent) {
+        // Editing an existing event (PUT request)
+        response = await fetch(`/api/events/${selectedEvent.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        // Creating a new event (POST request)
+        response = await fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to save event");
+      }
+
+      // After a successful save, refresh the events from the server
+      await fetchEvents();
+    } catch (error) {
+      console.error("Error saving event:", error);
+    } finally {
       closeModal();
     }
   };
 
+  // --- MODIFIED ---: handleDeleteEvent now communicates with the backend API
+  const handleDeleteEvent = async () => {
+    if (selectedEvent) {
+      try {
+        const response = await fetch(`/api/events/${selectedEvent.id}`, {
+          method: "DELETE",
+        });
+
+        if (!response.ok && response.status !== 204) {
+          // 204 is a valid success response for DELETE
+          const errorData = await response.json();
+          throw new Error(errorData.error || "Failed to delete event");
+        }
+
+        // After a successful delete, refresh the events from the server
+        await fetchEvents();
+      } catch (error) {
+        console.error("Error deleting event:", error);
+      } finally {
+        closeModal();
+      }
+    }
+  };
+
+  // --- JSX (No major changes, only minor adjustments for clarity) ---
   return (
     <div className="bg-slate-100 min-h-screen font-sans p-2 sm:p-4 flex flex-col">
       <div
@@ -277,11 +351,11 @@ export default function App() {
                         e.stopPropagation();
                         openModalForEditEvent(event);
                       }}
-                      className={`${event.color} text-white text-[10px] sm:text-xs rounded px-1.5 py-0.5 truncate cursor-pointer flex flex-wrap gap-1.5 text-center`}
+                      className={`${event.color} text-white text-[10px] sm:text-xs rounded px-1.5 py-0.5 truncate cursor-pointer flex items-center justify-between`}
                     >
-                      <span className="">{event.title}</span>
-                      <span className="font-semibold mr-1.5">
-                        {format(event.date, "HH:mm")}-
+                      <span className="truncate">{event.title}</span>
+                      <span className="font-semibold ml-1.5 flex-shrink-0">
+                        {format(event.startDate, "HH:mm")}-
                         {format(event.endDate, "HH:mm")}
                       </span>
                     </div>
@@ -306,10 +380,16 @@ export default function App() {
 }
 
 // --- 事件编辑/新增弹窗组件 ---
+// --- MODIFIED ---: The onSave prop type has been updated to reflect the new payload
 interface EventModalProps {
   date: Date | null;
   event: EventType | null;
-  onSave: (data: Omit<EventType, "id">) => void;
+  onSave: (data: {
+    title: string;
+    date: Date;
+    endDate: Date;
+    color: string;
+  }) => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -322,11 +402,11 @@ function EventModal({
   onClose,
 }: EventModalProps) {
   const [title, setTitle] = useState(event?.title || "");
-  const [startDate, setStartDate] = useState<Date>(
-    event?.date || date || new Date()
+  const [startTime, setStartTime] = useState<Date>(
+    event?.startDate || date || new Date()
   );
-  const [endDate, setEndDate] = useState<Date>(
-    event?.endDate || event?.date || new Date()
+  const [endTime, setEndTime] = useState<Date>(
+    event?.endDate || event?.startDate || new Date()
   );
   const [color, setColor] = useState(event?.color || "bg-blue-500");
 
@@ -346,32 +426,32 @@ function EventModal({
     type: "start" | "end"
   ) => {
     const [hours, minutes] = e.target.value.split(":");
-    const targetDate = type === "start" ? startDate : endDate;
+    const targetDate = type === "start" ? startTime : endTime;
     const newDate = new Date(targetDate);
     newDate.setHours(parseInt(hours, 10));
     newDate.setMinutes(parseInt(minutes, 10));
 
     if (type === "start") {
-      setStartDate(newDate);
-      if (newDate > endDate) {
-        setEndDate(newDate); // 如果开始时间晚于结束时间，自动将结束时间设为开始时间
+      setStartTime(newDate);
+      if (newDate > endTime) {
+        setEndTime(newDate);
       }
     } else {
-      setEndDate(newDate);
+      setEndTime(newDate);
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title) {
-      alert("请输入标题");
       return;
     }
-    if (startDate > endDate) {
+    if (startTime > endTime) {
       alert("结束时间不能早于开始时间");
       return;
     }
-    onSave({ title, date: startDate, endDate: endDate, color });
+    // --- MODIFIED ---: The payload now uses 'date' to match the API expectation
+    onSave({ title, date: startTime, endDate: endTime, color });
   };
 
   return (
@@ -409,7 +489,7 @@ function EventModal({
                 </label>
                 <input
                   type="time"
-                  value={format(startDate, "HH:mm")}
+                  value={format(startTime, "HH:mm")}
                   onChange={(e) => handleTimeChange(e, "start")}
                   className="mt-1 block w-full border border-slate-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
@@ -420,7 +500,7 @@ function EventModal({
                 </label>
                 <input
                   type="time"
-                  value={format(endDate, "HH:mm")}
+                  value={format(endTime, "HH:mm")}
                   onChange={(e) => handleTimeChange(e, "end")}
                   className="mt-1 block w-full border border-slate-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
