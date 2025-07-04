@@ -1,43 +1,59 @@
-// app/api/users/[id]/route.ts
+// src/app/api/events/[id]/route.ts (or users/[id]/route.ts)
 
-import { pool } from '../../../../../lib/db'; // 注意路径多了一层
-import { NextResponse } from 'next/server';
+import { pool } from '../../../../../lib/db';
+import { NextResponse, NextRequest } from 'next/server';
+import { RowDataPacket } from 'mysql2';
 
-interface RequestContext {
-  params: {
-    id: string; // id 会从 URL 中作为字符串传入
-  };
-}
 
-// PUT /api/users/:id - 更新指定ID的数据
-export async function PUT(request: Request, { params }: RequestContext) {
+// GET /api/events/:id - 获取单个事件
+export async function GET(request: NextRequest, { params }: any) {
   try {
-    const { id } = params; // 从 URL 参数获取 id
-    const { title, date, endDate, color } = await request.json(); // 从请求体获取要更新的数据
-
-    if (!title || !date || !endDate) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-
-    const result = await pool.execute(
-      'UPDATE sys_class SET title = ?, start_date = ?, end_date = ?, color = ? WHERE id = ?',
-      [title, new Date(date), new Date(endDate), color, id]
+    const { id } = params;
+    const [rows] = await pool.query<RowDataPacket[]>(
+      'SELECT * FROM sys_class WHERE id = ?',
+      [id]
     );
 
-    // 检查是否有行被更新
-    if ((result[0] as any).affectedRows === 0) {
+    if (rows.length === 0) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ message: 'Event updated successfully' }, { status: 200 });
+    return NextResponse.json(rows[0]);
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
 
-// DELETE /api/users/:id - 删除指定ID的数据
-export async function DELETE(request: Request, { params }: RequestContext) {
+
+// PUT /api/events/:id - 更新一个事件
+export async function PUT(request: NextRequest, { params }: any) {
+  try {
+    const { id } = params; // 从 URL 参数获取 id
+    const { title, date, endDate, color } = await request.json();
+
+    if (!title || !date || !endDate) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+    
+    const result = await pool.execute(
+      'UPDATE sys_class SET title = ?, start_date = ?, end_date = ?, color = ? WHERE id = ?',
+      [title, new Date(date), new Date(endDate), color, id]
+    );
+
+    if ((result[0] as any).affectedRows === 0) {
+      return NextResponse.json({ error: 'Event not found or no changes made' }, { status: 404 });
+    }
+
+    return NextResponse.json({ message: 'Event updated successfully' });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+// DELETE /api/events/:id - 删除一个事件
+export async function DELETE(request: NextRequest, { params }: any) {
   try {
     const { id } = params; // 从 URL 参数获取 id
 
@@ -49,8 +65,7 @@ export async function DELETE(request: Request, { params }: RequestContext) {
     if ((result[0] as any).affectedRows === 0) {
       return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     }
-
-    // 返回 204 No Content，表示成功删除，且响应体为空
+    
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     console.error(error);
